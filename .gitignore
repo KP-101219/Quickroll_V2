@@ -1,0 +1,69 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+data/logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Student images (sensitive data)
+data/students/
+backend/data/students/
+
+# Node modules (web)
+node_modules/
+.next/
+.nuxt/
+dist/
+build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model files (too large for git, download separately)
+# *.onnx
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+.cache/
