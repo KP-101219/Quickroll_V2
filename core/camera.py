@@ -13,8 +13,8 @@ import time
 import os
 
 
-# Configuration via environment variable or default
-DEFAULT_CAMERA_INDEX = int(os.environ.get('QUICKROLL_CAMERA_INDEX', '0'))
+# Configuration - Force Camera 0 (PC Camera)
+DEFAULT_CAMERA_INDEX = 0  # PC built-in camera
 
 
 def find_best_camera():

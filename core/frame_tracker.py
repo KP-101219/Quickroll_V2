@@ -77,8 +77,9 @@ class TemplateTracker:
 class TrackedFace:
     """Represents a tracked face with its associated data."""
     
-    def __init__(self, bbox, face_id):
+    def __init__(self, bbox, face_data, face_id):
         self.bbox = bbox  # (x, y, w, h)
+        self.face_data = face_data # Full detection result with landmarks
         self.face_id = face_id
         self.tracker = None
         self.embedding = None
@@ -112,6 +113,22 @@ class TrackedFace:
             success, bbox = self.tracker.update(frame)
             if success:
                 self.bbox = tuple(map(int, bbox))
+                # Note: face_data is now STALE because face moved.
+                # However, for alignment, we ideally need FRESH landmarks.
+                # But KCF doesn't give landmarks.
+                # Solution: If using KCF, we might default to naive crop OR
+                # we just accept that 'face_data' is from the last full detection.
+                # Better approach: recognizer uses 'face_data' ONLY if it's fresh?
+                # Actually, alignCrop needs landmarks RELATIVE to the image.
+                # If face moved, landmarks are wrong.
+                # So we can only use alignCrop on frames where we ran DETECTION.
+                # On tracking frames, we might have to fallback to naive crop 
+                # OR re-run a lightweight landmark detector (too fast?)
+                # For now, let's only run recognition on DETECTION frames 
+                # OR accept naive crop for tracking frames.
+                # But wait, _run_recognition is called periodically.
+                # If we want high accuracy, we should probably prefer running recognition
+                # immediately after detection.
                 self.tracking_failures = 0
                 return True
             else:
@@ -201,18 +218,20 @@ class FrameTracker:
         
         # Decide whether to run detection or tracking
         run_detection = (self.frame_count % self.detection_interval == 0) or len(self.tracked_faces) == 0
+        
+        # We prefer to run recognition ON detection frames to utilize landmarks
         run_recognition = (self.frame_count % self.recognition_interval == 0)
         
         if run_detection:
             # Full detection - expensive but accurate
             results = self._run_detection(frame)
+            # FORCE recognition on detection frames for best accuracy
+            self._run_recognition(frame, use_landmarks=True)
         else:
             # Tracking only - cheap and fast
             results = self._run_tracking(frame)
-        
-        # Run recognition periodically or on new faces
-        if run_recognition or run_detection:
-            self._run_recognition(frame)
+            if run_recognition:
+                self._run_recognition(frame, use_landmarks=False)
         
         # Build result list from tracked faces
         output = []
@@ -266,6 +285,7 @@ class FrameTracker:
                 # Match found - update existing tracked face
                 det = detected_faces[best_idx]
                 tracked.bbox = tuple(det[0:4].astype(int))
+                tracked.face_data = det # Update landmarks
                 tracked.last_detected_frame = self.frame_count
                 tracked.init_tracker(frame)  # Reinitialize tracker
                 new_tracked[face_id] = tracked
@@ -275,7 +295,7 @@ class FrameTracker:
         for idx, det in enumerate(detected_faces):
             if idx not in used_detections:
                 bbox = tuple(det[0:4].astype(int))
-                new_face = TrackedFace(bbox, self.next_face_id)
+                new_face = TrackedFace(bbox, det, self.next_face_id)
                 new_face.last_detected_frame = self.frame_count
                 new_face.init_tracker(frame)
                 new_tracked[self.next_face_id] = new_face
@@ -300,24 +320,36 @@ class FrameTracker:
         
         return []
     
-    def _run_recognition(self, frame):
-        """Run face recognition on all tracked faces."""
+    def _run_recognition(self, frame, use_landmarks=True):
+        """
+        Run face recognition on all tracked faces.
+        If use_landmarks is True, we use the cached face_data for alignment.
+        If False (tracking mode), we use naive crop (landmarks might be stale).
+        """
         for face_id, tracked in self.tracked_faces.items():
-            x, y, w, h = tracked.bbox
             
-            # Add padding
-            pad = 10
-            h_img, w_img = frame.shape[:2]
-            x1 = max(0, x - pad)
-            y1 = max(0, y - pad)
-            x2 = min(w_img, x + w + pad)
-            y2 = min(h_img, y + h + pad)
-            
-            face_img = frame[y1:y2, x1:x2]
-            
-            if face_img.size > 0:
-                result = self.recognizer.match_face_with_confidence(face_img)
+            if use_landmarks and tracked.face_data is not None:
+                # Use full frame + landmarks for HIGH ACCURACY
+                result = self.recognizer.match_face_with_confidence(frame, tracked.face_data)
                 tracked.recognition_result = result
+            else:
+                # Fallback to crop-only (Legacy/Fast mode)
+                x, y, w, h = tracked.bbox
+                h_img, w_img = frame.shape[:2]
+                
+                # Add padding
+                pad = 10
+                x1 = max(0, x - pad)
+                y1 = max(0, y - pad)
+                x2 = min(w_img, x + w + pad)
+                y2 = min(h_img, y + h + pad)
+                
+                face_img = frame[y1:y2, x1:x2]
+                
+                if face_img.size > 0:
+                    # Pass None for face_data to trigger naive resize fallback
+                    result = self.recognizer.match_face_with_confidence(face_img, face_data=None)
+                    tracked.recognition_result = result
     
     def _compute_iou(self, box1, box2):
         """Compute Intersection over Union between two boxes."""

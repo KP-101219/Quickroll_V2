@@ -168,7 +168,7 @@ class CaptureView(ctk.CTkFrame):
         
         # Start Camera
         if self.camera is None:
-            self.camera = Camera(source=1)  # Use Mobile Camera / DroidCam (index 1)
+            self.camera = Camera(source=0)  # Use PC Camera (index 0)
         
         self.video_running = True
         self.manager.start_session(student_id)

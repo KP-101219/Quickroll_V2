@@ -11,24 +11,8 @@ from core.frame_tracker import FrameTracker, FPSCounter
 from ui.styles import COLORS, FONTS, DIMENSIONS
 
 def detect_available_cameras():
-    """Detect all available cameras and return list of (index, name, resolution)."""
-    cameras = []
-    # Only check index 1 onwards (skip PC camera at 0)
-    for i in [1, 2, 3]:  # Skip index 0 (PC camera)
-        cap = cv2.VideoCapture(i)
-        if cap.isOpened():
-            ret, frame = cap.read()
-            if ret and frame is not None:
-                h, w = frame.shape[:2]
-                name = f"Mobile Camera / DroidCam ({w}x{h})"
-                cameras.append((i, name, w, h))
-        cap.release()
-    
-    # If no mobile cameras found, fall back to index 1
-    if not cameras:
-        cameras.append((1, "DroidCam (default)", 640, 480))
-    
-    return cameras
+    """Force return only PC camera (Index 0)."""
+    return [(0, "PC Camera (Force Index 0)", 640, 480)]
 
 
 class AttendanceView(ctk.CTkFrame):
@@ -38,12 +22,10 @@ class AttendanceView(ctk.CTkFrame):
         
         # Detect available cameras first
         self.available_cameras = detect_available_cameras()
-        self.current_camera_idx = 0
+        self.current_camera_idx = 0 # Force 0
         
         # Initialize Core Modules
-        if self.available_cameras:
-            self.current_camera_idx = self.available_cameras[0][0]
-        self.camera = Camera(source=self.current_camera_idx)
+        self.camera = Camera(source=0) # FORCE PC CAMERA
         self.detector = FaceDetector()
         self.recognizer = Recognizer()
         self.recognizer.load_database()
@@ -172,25 +154,22 @@ class AttendanceView(ctk.CTkFrame):
         self.frame_tracker.reset()
     
     def on_camera_change(self, selection):
-        """Handle camera switch from dropdown."""
-        # Find the camera index from selection
-        for idx, name, w, h in self.available_cameras:
-            if name == selection:
-                if idx != self.current_camera_idx:
-                    print(f"[INFO] Switching to camera {idx}: {name}")
-                    
-                    # Stop current camera
-                    self.camera.stop()
-                    
-                    # Reset frame tracker
-                    self.frame_tracker.reset()
-                    
-                    # Start new camera
-                    self.current_camera_idx = idx
-                    self.camera = Camera(source=idx)
-                    
-                    print(f"[INFO] Camera switched to {name}")
-                break
+        """Handle camera switch - Forced to keep Camera 0."""
+        print(f"[INFO] Selection changed to {selection}, but FORCING Camera 0")
+        
+        # Stop current camera
+        self.camera.stop()
+        
+        # Reset frame tracker
+        self.frame_tracker.reset()
+        
+        # Start new camera (Force 0)
+        self.current_camera_idx = 0
+        try:
+            self.camera = Camera(source=0)
+        except Exception as e:
+            print(f"[ERROR] Failed to switch camera: {e}")
+            self.camera = Camera(source=0)
 
     def update_loop(self):
         if not self.running: return

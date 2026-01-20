@@ -138,9 +138,11 @@ class CaptureManager:
                     print(f"[CAPTURE] Saved {target} for {self.current_student_id}")
                     self.captured_angles[target] = path
                     
-                    # Generate embedding and save to DB
+                  # Generate embedding and save to DB
                     if self.db and self.recognizer:
-                        emb = self.recognizer._generate_embedding(face_img)
+                        # Use full frame + face data for aligned embedding
+                        # face is [x, y, w, h, x_re, y_re, ...] from detector
+                        emb = self.recognizer._generate_embedding(frame, face)
                         if emb is not None:
                             self.db.add_embedding(self.current_student_id, emb, target)
                             print(f"[DB] Saved embedding for {target}")

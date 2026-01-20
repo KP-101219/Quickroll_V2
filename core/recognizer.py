@@ -63,25 +63,37 @@ class Recognizer:
         if image is None: return None
         return self._generate_embedding(image)
 
-    def _generate_embedding(self, face_image):
+    def _generate_embedding(self, image, face_data=None):
         """
-        Generate 128D embedding from a cropped face image.
-        Note: SFace expects aligned 112x112 image. 
-        For simplicity, we let SFace handle alignment if landmarks are provided, 
-        but here we assume input IS the cropped face.
-        """
-        # Resize to 112x112 as required by SFace
-        # Note: Ideally we should use alignCrop if we have landmarks, 
-        # but since we saved cropped faces, we just resize.
-        target = cv2.resize(face_image, (112, 112))
+        Generate 128D embedding from an image.
         
-        # SFace expects float blob? No, the API handles it.
-        # But alignCrop is better.
-        # If we just pass the cropped image to feature(), it works.
+        Args:
+            image: Full image or cropped face.
+            face_data: (Optional) Detection result [x, y, w, h, x_re, y_re, ...]. 
+                       Required for alignCrop.
+        
+        Returns:
+            128D numpy array or None
+        """
+        if self.recognizer is None:
+            return None
+            
         try:
-            return self.recognizer.feature(target)
+            # Method 1: Alignment (Preferred)
+            # Requires full frame + face detection data (with landmarks)
+            if face_data is not None:
+                # alignCrop crops and aligns the face to 112x112
+                aligned_face = self.recognizer.alignCrop(image, face_data)
+                return self.recognizer.feature(aligned_face)
+            
+            # Method 2: Naive Resize (Legacy/Fallback)
+            # Used if we only have a pre-cropped face without landmarks
+            else:
+                target = cv2.resize(image, (112, 112))
+                return self.recognizer.feature(target)
+                
         except Exception as e:
-            # print(f"Emb Error: {e}")
+            print(f"[ERROR] Embedding Generation Failed: {e}")
             return None
 
     def _compute_all_scores(self, target_emb):
@@ -106,54 +118,35 @@ class Recognizer:
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores
 
-    def recognize(self, face_image):
+    def recognize(self, image, face_data=None):
         """
         Match a face against the database.
         Returns: student_id, confidence, info_dict
-                 OR None, 0.0, {} if no match
         """
         if self.recognizer is None: return None, 0.0, {}
         
-        target_emb = self._generate_embedding(face_image)
+        target_emb = self._generate_embedding(image, face_data)
         if target_emb is None: return None, 0.0, {}
         
-        best_score = 0.0
-        best_id = None
-        
-        # Compare against all students
-        # Optimization: In Phase 5 we can use matrix multiplication.
-        # For now (loop) is fine for distinct embeddings.
-        for s_id, emp_list in self.embeddings.items():
-            for stored_emb in emp_list:
-                score = self.recognizer.match(target_emb, stored_emb, 1) # 1 = Cosine Similarity
-                if score > best_score:
-                    best_score = score
-                    best_id = s_id
-        
-        if best_score > self.threshold:
-            return best_id, best_score, self.student_map.get(best_id, {})
-        
-        return None, best_score, {}
+        # Reuse existing logic via _compute_all_scores or manual loop
+        # For consistency, let's just use match_face_with_confidence logic
+        best_id, status, conf, info = self.match_face_with_confidence(image, face_data)
+        return best_id, conf, info
 
-    def match_face_with_confidence(self, face_image):
+    def match_face_with_confidence(self, image, face_data=None):
         """
         Match face and return recognition status with confidence level.
         
-        This method implements the SmartPencs-style confidence scoring:
-        - HIGH confidence (>=0.65): Auto-mark attendance
-        - LOW confidence (0.45-0.65): May need verification
-        - UNKNOWN (<0.45): Person not in database
+        Args:
+            image: Full frame or crop (if face_data is None)
+            face_data: Detection result (for alignment)
         
         Returns: (student_id, status, confidence, info_dict)
-            - student_id: Matched student ID or None
-            - status: 'RECOGNIZED', 'MAYBE', or 'UNKNOWN'
-            - confidence: Float score (0.0 - 1.0)
-            - info_dict: Student metadata (name, etc.)
         """
         if self.recognizer is None:
             return None, "UNKNOWN", 0.0, {}
         
-        target_emb = self._generate_embedding(face_image)
+        target_emb = self._generate_embedding(image, face_data)
         if target_emb is None:
             return None, "UNKNOWN", 0.0, {}
         
@@ -177,10 +170,14 @@ class Recognizer:
             status = "UNKNOWN"
             return None, status, best_score, {}
 
-    def get_top_matches(self, face_image, top_n=3):
+    def get_top_matches(self, image, face_data=None, top_n=3):
         """
         Get top N candidate matches with confidence scores.
         Useful for displaying multiple possible matches to the user.
+        
+        Args:
+            image: Full frame or crop (if face_data is None)
+            face_data: Detection result (for alignment)
         
         Returns: List of (student_id, confidence, info_dict) tuples
                  List will be empty if no embeddings exist or face is invalid.
@@ -188,7 +185,7 @@ class Recognizer:
         if self.recognizer is None:
             return []
         
-        target_emb = self._generate_embedding(face_image)
+        target_emb = self._generate_embedding(image, face_data)
         if target_emb is None:
             return []
         

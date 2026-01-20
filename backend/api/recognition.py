@@ -65,8 +65,9 @@ async def recognize_face(image: UploadFile = File(...)):
         x, y, w, h = int(face[0]), int(face[1]), int(face[2]), int(face[3])
         face_crop = img[y:y+h, x:x+w]
         
-        # Recognize
-        student_id, status, confidence, info = recognizer.match_face_with_confidence(face_crop)
+        # Recognize with alignment
+        # Pass full image and face data (including landmarks)
+        student_id, status, confidence, info = recognizer.match_face_with_confidence(img, face)
         
         return {
             "student_id": student_id,
@@ -103,8 +104,8 @@ async def get_top_matches(image: UploadFile = File(...), top_n: int = 3):
         x, y, w, h = int(face[0]), int(face[1]), int(face[2]), int(face[3])
         face_crop = img[y:y+h, x:x+w]
         
-        # Get top matches
-        matches = recognizer.get_top_matches(face_crop, top_n)
+        # Get top matches with alignment
+        matches = recognizer.get_top_matches(img, face, top_n)
         
         result = []
         for student_id, confidence, info in matches:
